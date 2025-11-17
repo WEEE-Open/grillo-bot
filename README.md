@@ -2,18 +2,17 @@
 
 A Telegram bot for interacting with the [WEEE-Open/grillo](https://github.com/WEEE-Open/grillo) lab booking and management API.
 
-**Compatible with:** `main` and `schedule` branches of WEEE-Open/grillo
+**Compatible with:** `main` branch of WEEE-Open/grillo
 
 ## Features
 
--  **Check status** - See who's in the lab and upcoming bookings
-- ⏰ **Clock in/out** - Track your lab time with audits
-- � **Auto-reload** - Development mode with automatic restart on file changes
+- **Check status** - See who's in the lab and upcoming bookings
+- **Clock in/out** - Track your lab time with audits
+- **Auto-reload** - Development mode with automatic restart on file changes
 
 ## Prerequisites
 
 - Python 3.11 or higher
-- Nix package manager (optional, for reproducible development environment)
 - A Telegram Bot Token (from [@BotFather](https://t.me/botfather))
 - A Grillo API Token (from the Grillo web UI settings)
 
@@ -34,22 +33,11 @@ A Telegram bot for interacting with the [WEEE-Open/grillo](https://github.com/WE
 
 ### 2. Setup
 
-**Using Nix (Recommended):**
-```bash
-git clone https://github.com/yourusername/grillo-bot.git
-cd grillo-bot
-nix develop
-cp .env.example .env
-# Edit .env with your tokens
-python dev.py  # Development mode with auto-reload
-```
-
-**Using pip:**
 ```bash
 git clone https://github.com/yourusername/grillo-bot.git
 cd grillo-bot
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your tokens
@@ -102,7 +90,6 @@ grillo-bot/
 ├── user_mapper.py      # Telegram ↔ LDAP user mapping
 ├── config.py           # Configuration management
 ├── utils.py            # Utility functions
-├── flake.nix           # Nix development environment
 ├── requirements.txt    # Python dependencies
 ├── .env.example        # Environment template
 ├── .env                # Your config (gitignored)
@@ -198,11 +185,6 @@ See the [Grillo API source](https://github.com/WEEE-Open/grillo) for complete do
 - Check `GRILLO_API_TOKEN` has proper permissions
 - Verify `GRILLO_API_URL` is correct and accessible
 
-**Nix issues:**
-- Ensure flakes are enabled: `nix-shell -p nixFlakes`
-- Update flake: `nix flake update`
-- Rebuild: `nix develop`
-
 ## License
 
 MIT
@@ -220,8 +202,8 @@ MIT
 - [WEEE-Open/grillo](https://github.com/WEEE-Open/grillo) - The Grillo lab booking system
   - Main branch: Core functionality
   - [Schedule branch](https://github.com/WEEE-Open/grillo/tree/schedule) - Enhanced scheduling features
-- [WEEEOpen](https://weeeopen.it/) - WEEE Open community
+- [WEEEOpen](https://weeeopen.it/) - WEEE Open - Student team at Politecnico di Torino
 
 ## Authors
 
-Created for the WEEE-Open community.
+- **Basile Francesco** ([@parmigggiana](https://github.com/parmigggiana))
