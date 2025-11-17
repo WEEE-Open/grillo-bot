@@ -9,8 +9,8 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config import config
-from grillo_client import get_user_client
-from grillo_client import user_mapper
+from grillo_client import GrilloClient, get_user_client_by_telegram
+from user_mapper import user_mapper
 
 # Enable logging
 logging.basicConfig(
@@ -28,10 +28,10 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE, pre: str = ""
     await update.message.reply_html(
         pre +
         "<b>Available commands:</b>\n"
-        "/help - Show this help message"
+        "/help - Show this help message\n"
         "/status - Check current lab status\n"
-        "/login - Clock in to the lab\n"
-        "/logout - Clock out from the lab\n"
+        "/clockin - Clock in to the lab\n"
+        "/clockout - Clock out from the lab\n"
         # "/bookings - View your bookings\n"
         # "/locations - List all lab locations\n"
         # "/ring - Ring the WEEETofono to request entry\n"
@@ -46,6 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Check if user is mapped
     is_mapped = user_mapper.is_user_mapped(telegram_id)
+    print(is_mapped)
     mapping_status = ""
     if not is_mapped:
         res = user_mapper.map_user(telegram_id)
@@ -58,10 +59,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await help(update, context, f"🦗 <b>Welcome to Grillo Bot, {user.mention_html()}!</b>\n{mapping_status}\n\n")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # TODO check
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # TODO
     """Check the status of the default lab location."""
     try:
-        grillo = get_user_client(update.effective_user.id)
+        grillo = get_user_client_by_telegram(update.effective_user.id)
         location_id = " ".join(context.args) if context.args else "default"
         location = grillo.get_location(location_id)
 
@@ -89,18 +90,22 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # 
         logger.error(f"Error fetching status: {e}")
         await update.message.reply_text(f"❌ Error fetching status: {str(e)}")
 
-async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def clockin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clock in to the lab."""
     try:
-        grillo = get_user_client(update.effective_user.id)
+        grillo = get_user_client_by_telegram(update.effective_user.id)
         if context.args:
             admin = grillo.is_admin()
+            if admin:
+                user = context.args[0]
+                grillo = GrilloClient(user_id=user)
+                location = context.args[1] if len(context.args) > 1 else None
+            else:
+                location=  context.args[0]
+        else:
+            location = None
 
-        user = # self by default, if specified check for admin
-        # if not admin, assume it's location instead
-
-        location = " ".join(context.args) if context.args else None # lab by default
-        result = grillo.login_to_lab(location)
+        result = grillo.clock in(location)
 
         loc_name = result.get("location", "the lab")
         await update.message.reply_text(f"✅ Clocked in to {loc_name}!")
@@ -109,19 +114,19 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"❌ Error logging in: {str(e)}")
 
 
-async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def clockout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clock out from the lab."""
     if not context.args:
         await update.message.reply_text(
             "❌ Please provide a summary of your work.\n"
-            "Usage: /logout <summary>"
+            "Usage: /clockout <summary>"
         )
         return
 
     try:
-        grillo = get_user_client(update.effective_user.id)
+        grillo = get_user_client_by_telegram(update.effective_user.id)
         summary = " ".join(context.args)
-        grillo.logout_from_lab(summary)
+        grillo.clockout(summary)
 
         await update.message.reply_text("✅ Clocked out successfully!")
     except Exception as e:
@@ -261,8 +266,8 @@ def main() -> None:
         start,
         help,
         status,
-        login,
-        logout,
+        clockin,
+        clockout,
         # locations,
         # bookings,
     ]

@@ -2,7 +2,7 @@
 import json
 import os
 from typing import Optional, Dict
-from grillo_client import GrilloClient
+from grillo_client import GrilloClient, api_admin_grillo
 
 
 class UserMapper:
@@ -19,7 +19,7 @@ class UserMapper:
         self.grillo = grillo_client
         self.mapping_file = mapping_file
         self.mappings = self._load_mappings()
-        self.sessions = {}  # Cache of telegram_id -> session_cookie
+        self.clients = {}  # Cache of telegram_id -> GrilloClient
 
     def _load_mappings(self) -> Dict[int, str]:
         """Load user mappings from file."""
@@ -51,12 +51,14 @@ class UserMapper:
             # If username not provided, try to find user by Telegram ID
             if not ldap_username:
                 user = self.grillo.get_user_by_telegram_id(telegram_id)
-                if user:
-                    ldap_username = user.get('uid')
-                else:
+                print("AUTO-DISCOVERED USER:")
+                print(user)
+                # if user:
+                #     ldap_username = user.get('uid')
+                if not user:
                     return False
 
-            self.mappings[telegram_id] = ldap_username
+            self.mappings[telegram_id] = user
             self._save_mappings()
 
             # Clear cached session
@@ -66,18 +68,6 @@ class UserMapper:
             return True
         except Exception:
             return False
-
-    def get_ldap_user(self, telegram_id: int) -> Optional[str]:
-        """
-        Get the LDAP username for a Telegram user.
-
-        Args:
-            telegram_id: Telegram user ID
-
-        Returns:
-            LDAP username or None if not mapped
-        """
-        return self.mappings.get(telegram_id)
 
     def get_client_for_user(self, telegram_id: int) -> Optional[GrilloClient]:
         """
@@ -89,30 +79,23 @@ class UserMapper:
         Returns:
             GrilloClient instance with user session or None if user not mapped
         """
-        ldap_user = self.get_ldap_user(telegram_id)
-        if not ldap_user:
-            return None
-
-        # Check if we have a cached session
-        if telegram_id in self.sessions:
-            session_cookie = self.sessions[telegram_id]
-        else:
-            # Generate new session
-            try:
-                session_cookie = self.grillo.generate_session_for_user(ldap_user)
-                if session_cookie:
-                    self.sessions[telegram_id] = session_cookie
-                else:
-                    return None
-            except Exception:
+        user = self.mappings.get(telegram_id)
+        if not user:
+            res = self.map_user(telegram_id)
+            if not res:
                 return None
 
-        # Create new client with session and user_id
-        return GrilloClient(
-            api_url=self.grillo.api_url,
-            session_cookie=session_cookie,
-            user_id=ldap_user
-        )
+        # Check if we have a cached client
+        if telegram_id in self.clients:
+            client = self.clients[telegram_id]
+        else:
+            client = GrilloClient(
+                api_url=self.grillo.api_url,
+                user=user
+            )
+            self.clients[telegram_id] = client
+
+        return client
 
     def is_user_mapped(self, telegram_id: int) -> bool:
         """Check if a Telegram user is mapped to an LDAP user."""
@@ -121,3 +104,6 @@ class UserMapper:
     def list_mappings(self) -> Dict[int, str]:
         """Get all user mappings."""
         return self.mappings.copy()
+
+# Initialize user mapper
+user_mapper = UserMapper(api_admin_grillo)

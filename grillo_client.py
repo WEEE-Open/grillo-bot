@@ -1,13 +1,13 @@
 """Grillo API client for interacting with the WEEE-Open/grillo API."""
+from token import OP
 import requests
 from typing import Dict, List, Optional, Any
 from config import config
-from user_mapper import UserMapper
 
 class GrilloClient:
     """Client for interacting with the Grillo API."""
 
-    def __init__(self, api_url: str = None, api_token: str = None, session_cookie: str = None, user_id: str = None):
+    def __init__(self, api_url: str = None, api_token: str = None, session_cookie: str = None, user: dict = None):
         """
         Initialize the Grillo API client.
 
@@ -20,9 +20,10 @@ class GrilloClient:
         self.api_url = api_url or config.GRILLO_API_URL
         self.api_token = api_token or config.GRILLO_API_TOKEN
         self.session_cookie = session_cookie
-        self.user_id = user_id
+        self.user = user
+        self.user_id = user.get('uid') if user else None
         self.session = requests.Session()
-
+        print("INITIALIZING GRILLO CLIENT for user: ", self.user)
         # Set up headers for API token auth
         if self.api_token:
             self.session.headers.update({
@@ -57,7 +58,10 @@ class GrilloClient:
                 params['uid'] = self.user_id
                 kwargs['params'] = params
 
-        response = self.session.request(method, url, **kwargs)
+        try:
+            response = self.session.request(method, url, **kwargs)
+        except requests.exceptions.RequestException as e:
+            print(f"Error making request to {url}: {e}")
         response.raise_for_status()
 
         if response.status_code == 204:  # No content
@@ -66,7 +70,7 @@ class GrilloClient:
         return response.json()
 
     def is_admin(self) -> bool:
-        # TODO
+        raise NotImplementedError("is_admin method not implemented yet.")
 
     def get_ldap_users(self) -> List[Dict[str, Any]]:
         """
@@ -93,49 +97,22 @@ class GrilloClient:
         except Exception:
             return None
 
-    def generate_session_for_user(self, user_id: str) -> Optional[str]:
+    # Location endpoints
+    def get_locations(self) -> List[Dict[str, Any]]:
+        """Get all locations."""
+        raise NotImplementedError("get_locations method not implemented yet.")
+
+    def ring_location(self, location_id: str = "default") -> bool:
         """
-        Generate a session cookie for a specific user (requires admin API token).
+        Ring the WEEETofono at a location to request entry.
 
         Args:
-            user_id: The LDAP user ID
+            location_id: Location ID or "default" for the default location
 
         Returns:
-            Session cookie string or None if failed
+            True if successful
         """
-        # This is a test mode endpoint - in production you'd need proper SSO
-        # For now, we can use the test mode user session endpoint
-        response = self._make_request("GET", f"/user/session?uid={user_id}")
-
-        # Extract session cookie from response
-        if 'Set-Cookie' in response.headers:
-            cookie_header = response.headers['Set-Cookie']
-            # Parse session cookie
-            session_cookie = cookie_header.split('session=')[1].split(';')[0]
-            return session_cookie
-
-        return None
-
-    # Location endpoints
-    # def get_locations(self) -> List[Dict[str, Any]]:
-    #     """Get all locations."""
-    #     return self._make_request("GET", "/locations")
-
-    # def ring_location(self, location_id: str = "default") -> bool:
-    #     """
-    #     Ring the WEEETofono at a location to request entry.
-
-    #     Args:
-    #         location_id: Location ID or "default" for the default location
-
-    #     Returns:
-    #         True if successful
-    #     """
-    #     try:
-    #         self._make_request("POST", f"/locations/{location_id}/ring")
-    #         return True
-    #     except Exception:
-    #         return False
+        raise NotImplementedError("ring_location method not implemented yet.")
 
     # Audit (lab time tracking) endpoints
     def get_audits(self, date_string: Optional[str] = None, user: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -146,30 +123,24 @@ class GrilloClient:
             date_string: ISO date string (defaults to current week)
             user: User ID to filter by
         """
-        params = {}
-        if date_string:
-            params["dateString"] = date_string
-        if user:
-            params["user"] = user
+        raise NotImplementedError("get_audits method not implemented yet.")
 
-        return self._make_request("GET", "/audits", params=params)
-
-    def login(self, location: Optional[str] = None) -> Dict[str, Any]:
+    def clockin(self, location: Optional[str] = None) -> Dict[str, Any]:
         """
-        Login to the lab (clock in).
+        Clock in to the lab.
 
         Args:
             location: Location ID (defaults to default location)
         """
-        data = {"login": True}
+        data = {"login": True, "user": self.user["id"]}
         if location:
             data["location"] = location
 
         return self._make_request("POST", "/audits", json=data)
 
-    def logout(self, summary: str) -> Dict[str, Any]:
+    def clockout(self, summary: str) -> Dict[str, Any]:
         """
-        Logout from the lab (clock out).
+        Clock out from the lab.
 
         Args:
             summary: Summary of work done during the session
@@ -179,6 +150,19 @@ class GrilloClient:
             "summary": summary
         }
         return self._make_request("PATCH", "/audits", json=data)
+
+    ### Location endpoints
+    def get_location(self, location_id: str = "default") -> Dict[str, Any]:
+        """
+        Get details of a specific location.
+
+        Args:
+            location_id: Location ID or "default" for the default location
+
+        Returns:
+            Location object
+        """
+        return self._make_request("GET", f"/locations/{location_id}")
 
     # Booking endpoints
     # def get_bookings(self) -> List[Dict[str, Any]]:
@@ -236,10 +220,7 @@ class GrilloClient:
 # Initialize Grillo API client with admin token for user management
 api_admin_grillo = GrilloClient()
 
-# Initialize user mapper
-user_mapper = UserMapper(api_admin_grillo)
-
-def get_user_client(telegram_id: int) -> GrilloClient:
+def get_user_client_by_telegram(telegram_id: int) -> GrilloClient:
     """
     Get a Grillo client for a specific Telegram user.
     Falls back to admin client with user_id if user is not mapped.
@@ -250,14 +231,10 @@ def get_user_client(telegram_id: int) -> GrilloClient:
     Returns:
         GrilloClient instance
     """
+    from user_mapper import user_mapper
     user_client = user_mapper.get_client_for_user(telegram_id)
     if user_client:
         return user_client
-
-    # Fall back to admin client - try to get user_id for tracking
-    ldap_user = user_mapper.get_ldap_user(telegram_id)
-    if ldap_user:
-        return GrilloClient(user_id=ldap_user)
 
     # Fall back to plain admin client for read-only operations
     return api_admin_grillo
