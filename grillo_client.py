@@ -7,23 +7,26 @@ from config import config
 class GrilloClient:
     """Client for interacting with the Grillo API."""
 
-    def __init__(self, api_url: str = None, api_token: str = None, session_cookie: str = None, user: dict = None):
+    def __init__(self, api_url: str = None, api_token: str = None, user: dict = None, user_id: str = None):
         """
         Initialize the Grillo API client.
 
         Args:
             api_url: Base URL for the Grillo API
             api_token: API token for authentication (get from grillo web UI)
-            session_cookie: Session cookie for user-specific operations
             user_id: LDAP user ID to associate with API token requests
         """
         self.api_url = api_url or config.GRILLO_API_URL
         self.api_token = api_token or config.GRILLO_API_TOKEN
-        self.session_cookie = session_cookie
+        self.session = requests.Session()
         self.user = user
         self.user_id = user.get('uid') if user else None
-        self.session = requests.Session()
-        print("INITIALIZING GRILLO CLIENT for user: ", self.user)
+        if not user and user_id:
+            self.user_id = user_id
+            self.user = self.get_user_by_uid(user_id)
+            if 'error' in self.user:
+                raise ValueError(f"User with UID '{user_id}' not found.")
+
         # Set up headers for API token auth
         if self.api_token:
             self.session.headers.update({
@@ -31,9 +34,6 @@ class GrilloClient:
                 "Content-Type": "application/json"
             })
 
-        # Set up session cookie if provided
-        if self.session_cookie:
-            self.session.cookies.set("session", self.session_cookie)
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
@@ -51,26 +51,17 @@ class GrilloClient:
             requests.exceptions.RequestException: If the request fails
         """
         url = f"{self.api_url}{endpoint}"
-        # If using API token and user_id is set, add uid to query params
-        if self.api_token and self.user_id and not self.session_cookie:
-            params = kwargs.get('params', {})
-            if isinstance(params, dict):
-                params['uid'] = self.user_id
-                kwargs['params'] = params
-
         try:
             response = self.session.request(method, url, **kwargs)
         except requests.exceptions.RequestException as e:
             print(f"Error making request to {url}: {e}")
-        response.raise_for_status()
+        # print("RESPONSE: ", response.json())
+        # response.raise_for_status()
 
-        if response.status_code == 204:  # No content
-            return {}
-
-        return response.json()
+        return response
 
     def is_admin(self) -> bool:
-        raise NotImplementedError("is_admin method not implemented yet.")
+        return True if self.user and 'soviet' in self.user.get('groups') else False
 
     def get_ldap_users(self) -> List[Dict[str, Any]]:
         """
@@ -79,7 +70,19 @@ class GrilloClient:
         Returns:
             List of user objects with id, username, name, etc.
         """
-        return self._make_request("GET", "/users")
+        return self._make_request("GET", "/users").json()
+
+    def get_user_by_uid(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get LDAP user by user ID (requires admin API token).
+
+        Args:
+            user_id: LDAP user ID
+
+        Returns:
+            User object
+        """
+        return self._make_request("GET", f"/user?uid={user_id}").json()
 
     def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -92,7 +95,7 @@ class GrilloClient:
             User object or None if not found
         """
         try:
-            user = self._make_request("GET", f"/user?telegram_id={telegram_id}")
+            user = self._make_request("GET", f"/user?telegram_id={telegram_id}").json()
             return user
         except Exception:
             return None
@@ -136,7 +139,13 @@ class GrilloClient:
         if location:
             data["location"] = location
 
-        return self._make_request("POST", "/audits", json=data)
+        res = self._make_request("POST", "/audits", json=data).json()
+
+        if 'error' in res:
+            if res['error'] == 'Must provide summary when switching location':
+                raise ValueError("Already clocked in. Please clock out before switching locations.")
+
+        return res
 
     def clockout(self, summary: str) -> Dict[str, Any]:
         """
@@ -147,9 +156,16 @@ class GrilloClient:
         """
         data = {
             "logout": True,
-            "summary": summary
+            "summary": summary,
+            "user": self.user["id"],
+            "approved": self.is_admin()
         }
-        return self._make_request("PATCH", "/audits", json=data)
+        res = self._make_request("PATCH", "/audits", json=data).json()
+        if 'error' in res:
+            if res['error'] == 'No active audit found for user':
+                raise ValueError("No active session to clock out from.")
+
+        return res[0] # Patch returns a list, but we only edit one at a time
 
     ### Location endpoints
     def get_location(self, location_id: str = "default") -> Dict[str, Any]:
@@ -162,7 +178,11 @@ class GrilloClient:
         Returns:
             Location object
         """
-        return self._make_request("GET", f"/locations/{location_id}")
+        res = self._make_request("GET", f"/locations/{location_id}").json()
+        if 'error' in res:
+            if res['error'] == 'Location not found':
+                raise ValueError(f"Location '{location_id}' not found.")
+        return res
 
     # Booking endpoints
     # def get_bookings(self) -> List[Dict[str, Any]]:

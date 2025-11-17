@@ -6,7 +6,7 @@ This bot allows interaction with the WEEE-Open/grillo API via Telegram.
 import logging
 from datetime import datetime
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, filters
 
 from config import config
 from grillo_client import GrilloClient, get_user_client_by_telegram
@@ -25,7 +25,7 @@ handlers = []
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE, pre: str = "") -> None:
     """Send a message when the command /help is issued."""
 
-    await update.message.reply_html(
+    await update.effective_message.reply_html(
         pre +
         "<b>Available commands:</b>\n"
         "/help - Show this help message\n"
@@ -59,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await help(update, context, f"🦗 <b>Welcome to Grillo Bot, {user.mention_html()}!</b>\n{mapping_status}\n\n")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # TODO
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # TODO check, function is as from Copilot
     """Check the status of the default lab location."""
     try:
         grillo = get_user_client_by_telegram(update.effective_user.id)
@@ -85,10 +85,10 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # 
                 start = datetime.fromtimestamp(booking['startTime'])
                 response += f"  • {start.strftime('%a %H:%M')} - {booking.get('userName', 'Unknown')}\n"
 
-        await update.message.reply_html(response)
+        await update.effective_message.reply_html(response)
     except Exception as e:
         logger.error(f"Error fetching status: {e}")
-        await update.message.reply_text(f"❌ Error fetching status: {str(e)}")
+        await update.effective_message.reply_text(f"❌ Error fetching status: {str(e)}")
 
 async def clockin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clock in to the lab."""
@@ -97,27 +97,26 @@ async def clockin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if context.args:
             admin = grillo.is_admin()
             if admin:
-                user = context.args[0]
-                grillo = GrilloClient(user_id=user)
+                grillo = GrilloClient(user_id=context.args[0], api_token=config.GRILLO_API_TOKEN)
                 location = context.args[1] if len(context.args) > 1 else None
             else:
                 location=  context.args[0]
         else:
             location = None
 
-        result = grillo.clock in(location)
+        result = grillo.clockin(location)
 
         loc_name = result.get("location", "the lab")
-        await update.message.reply_text(f"✅ Clocked in to {loc_name}!")
+        await update.effective_message.reply_text(f"✅ Clocked in to {loc_name}!")
     except Exception as e:
-        logger.error(f"Error logging in: {e}")
-        await update.message.reply_text(f"❌ Error logging in: {str(e)}")
+        logger.error(f"Error clocking in: {e}")
+        await update.effective_message.reply_text(f"❌ Error clocking in: {str(e)}")
 
 
 async def clockout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clock out from the lab."""
     if not context.args:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "❌ Please provide a summary of your work.\n"
             "Usage: /clockout <summary>"
         )
@@ -126,12 +125,21 @@ async def clockout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         grillo = get_user_client_by_telegram(update.effective_user.id)
         summary = " ".join(context.args)
-        grillo.clockout(summary)
+        res = grillo.clockout(summary)
+        endTime = int(res.get("endTime", 0))
+        startTime = int(res.get("startTime", 0))
+        duration = endTime - startTime
+        hours = duration // 3600
+        minutes = (duration % 3600) // 60
+        time_str = "Spent "
+        if hours > 0:
+            time_str += f"{hours}h "
+        time_str += f"{minutes}m in the lab."
 
-        await update.message.reply_text("✅ Clocked out successfully!")
+        await update.effective_message.reply_text(f"✅ Clocked out successfully!\n{time_str}")
     except Exception as e:
-        logger.error(f"Error logging out: {e}")
-        await update.message.reply_text(f"❌ Error logging out: {str(e)}")
+        logger.error(f"Error clocking out: {e}")
+        await update.effective_message.reply_text(f"❌ Error clocking out: {str(e)}")
 
 
 
@@ -273,12 +281,26 @@ def main() -> None:
     ]
     aliases = {
         "info": help,
+        "login": clockin,
+        "logout": clockout,
         "inlab": status,
     }
     for handler in handlers:
-        application.add_handler(CommandHandler(handler.__name__, handler))
+        application.add_handler(
+            CommandHandler(
+                handler.__name__,
+                handler,
+                filters=filters.UpdateType.MESSAGE | filters.UpdateType.EDITED_MESSAGE
+            )
+        )
     for handler in aliases.keys():
-        application.add_handler(CommandHandler(handler, aliases[handler]))
+        application.add_handler(
+            CommandHandler(
+                handler,
+                aliases[handler],
+                filters=filters.UpdateType.MESSAGE | filters.UpdateType.EDITED_MESSAGE
+            )
+        )
 
     # Register error handler
     application.add_error_handler(error_handler)
