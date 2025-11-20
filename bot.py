@@ -6,7 +6,7 @@ This bot allows interaction with the WEEE-Open/grillo API via Telegram.
 import logging
 from datetime import datetime
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 from config import config
 from grillo_client import GrilloClient, get_user_client_by_telegram
@@ -32,11 +32,6 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE, pre: str = ""
         "/status - Check current lab status\n"
         "/clockin - Clock in to the lab\n"
         "/clockout - Clock out from the lab\n"
-        # "/bookings - View your bookings\n"
-        # "/locations - List all lab locations\n"
-        # "/ring - Ring the WEEETofono to request entry\n"
-        # "/events - View upcoming events\n"
-        # "/code - Generate an entry code\n"
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -141,115 +136,12 @@ async def clockout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error clocking out: {e}")
         await update.effective_message.reply_text(f"❌ Error clocking out: {str(e)}")
 
-
-
-
-# async def locations(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """List all available locations."""
-#     try:
-#         grillo = get_user_client(update.effective_user.id)
-#         locations_list = grillo.get_locations()
-
-#         if not locations_list:
-#             await update.message.reply_text("No locations found.")
-#             return
-
-#         response = "📍 <b>Available Locations:</b>\n\n"
-#         for loc in locations_list:
-#             default_marker = " ⭐" if loc.get("default") else ""
-#             response += f"• <b>{loc['name']}</b> ({loc['id']}){default_marker}\n"
-
-#         await update.message.reply_html(response)
-#     except Exception as e:
-#         logger.error(f"Error fetching locations: {e}")
-#         await update.message.reply_text(f"❌ Error fetching locations: {str(e)}")
-
-
-
-# async def ring(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """Ring the WEEETofono to request entry."""
-#     try:
-#         grillo = get_user_client(update.effective_user.id)
-#         location_id = " ".join(context.args) if context.args else "default"
-#         success = grillo.ring_location(location_id)
-
-#         if success:
-#             await update.message.reply_text("🔔 Ringing the WEEETofono...")
-#         else:
-#             await update.message.reply_text("❌ Failed to ring. The WEEETofono might be offline.")
-#     except Exception as e:
-#         logger.error(f"Error ringing: {e}")
-#         await update.message.reply_text(f"❌ Error: {str(e)}")
-
-
-# async def bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """View bookings for the current week."""
-#     try:
-#         grillo = get_user_client(update.effective_user.id)
-#         bookings_list = grillo.get_bookings()
-
-#         if not bookings_list:
-#             await update.message.reply_text("📅 No bookings for this week.")
-#             return
-
-#         response = "📅 <b>Your Bookings:</b>\n\n"
-#         for booking in bookings_list:
-#             start = datetime.fromtimestamp(booking['startTime'])
-#             end_str = ""
-#             if booking.get('endTime'):
-#                 end = datetime.fromtimestamp(booking['endTime'])
-#                 end_str = f" - {end.strftime('%H:%M')}"
-
-#             response += f"• {start.strftime('%a %d %b, %H:%M')}{end_str}\n"
-#             response += f"  ID: {booking['id']}\n\n"
-
-#         await update.message.reply_html(response)
-#     except Exception as e:
-#         logger.error(f"Error fetching bookings: {e}")
-#         await update.message.reply_text(f"❌ Error fetching bookings: {str(e)}")
-
-
-# async def events(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """View upcoming events."""
-#     try:
-#         grillo = get_user_client(update.effective_user.id)
-#         events_list = grillo.get_events()
-
-#         if not events_list:
-#             await update.message.reply_text("📆 No upcoming events.")
-#             return
-
-#         response = "📆 <b>Upcoming Events:</b>\n\n"
-#         for event in events_list[:10]:  # Show max 10 events
-#             start = datetime.fromtimestamp(event['startTime'])
-#             response += f"• <b>{event['title']}</b>\n"
-#             response += f"  {start.strftime('%a %d %b, %H:%M')}\n"
-#             if event.get('description'):
-#                 response += f"  {event['description']}\n"
-#             response += "\n"
-
-#         await update.message.reply_html(response)
-#     except Exception as e:
-#         logger.error(f"Error fetching events: {e}")
-#         await update.message.reply_text(f"❌ Error fetching events: {str(e)}")
-
-
-# async def code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """Generate an entry code."""
-#     try:
-#         grillo = get_user_client(update.effective_user.id)
-#         result = grillo.generate_code()
-#         code_value = result.get("code")
-
-#         await update.message.reply_html(
-#             f"🔑 <b>Your entry code:</b>\n\n"
-#             f"<code>{code_value}</code>\n\n"
-#             f"This code expires in 60 seconds.\n"
-#             f"Show it at the lab entrance or scan the QR code."
-#         )
-#     except Exception as e:
-#         logger.error(f"Error generating code: {e}")
-#         await update.message.reply_text(f"❌ Error generating code: {str(e)}")
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle unknown commands."""
+    await update.effective_message.reply_text(
+        "❌ Command not recognized.\n\n"
+        "Use /help to see available commands."
+    )
 
 
 def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -276,8 +168,6 @@ def main() -> None:
         status,
         clockin,
         clockout,
-        # locations,
-        # bookings,
     ]
     aliases = {
         "info": help,
@@ -301,6 +191,14 @@ def main() -> None:
                 filters=filters.UpdateType.MESSAGE | filters.UpdateType.EDITED_MESSAGE
             )
         )
+
+    # must be last
+    application.add_handler(
+        MessageHandler(
+            filters.COMMAND & (filters.UpdateType.MESSAGE | filters.UpdateType.EDITED_MESSAGE),
+            unknown_command
+        )
+    )
 
     # Register error handler
     application.add_error_handler(error_handler)
