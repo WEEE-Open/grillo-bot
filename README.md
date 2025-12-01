@@ -37,7 +37,7 @@ A Telegram bot for interacting with the [WEEE-Open/grillo](https://github.com/WE
 git clone https://github.com/yourusername/grillo-bot.git
 cd grillo-bot
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate      powershell: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your tokens

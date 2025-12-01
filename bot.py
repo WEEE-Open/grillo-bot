@@ -32,6 +32,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE, pre: str = ""
         "/status - Check current lab status\n"
         "/clockin - Clock in to the lab\n"
         "/clockout - Clock out from the lab\n"
+        "/ring - Ring the bell at a location\n"
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -136,6 +137,19 @@ async def clockout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error clocking out: {e}")
         await update.effective_message.reply_text(f"❌ Error clocking out: {str(e)}")
 
+async def ring(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ring the bell at a location."""
+    # Precompute to use in exception handling too
+    location_id = " ".join(context.args) if context.args else "default"
+    grillo = get_user_client_by_telegram(update.effective_user.id)
+    success = grillo.ring_location(location_id)
+    if success[0]:
+        await update.effective_message.reply_text(f"🔔 Successfully rang the bell at location '{location_id}'.")
+    elif not success[0] and "error" in success[1]:
+        await update.effective_message.reply_text(f"❌ Error ringing the bell: {success[1]['error']}")
+    else:
+        await update.effective_message.reply_text(f"❌ Failed to ring the bell at location '{location_id}'.")
+
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle unknown commands."""
     await update.effective_message.reply_text(
@@ -168,6 +182,7 @@ def main() -> None:
         status,
         clockin,
         clockout,
+        ring,
     ]
     aliases = {
         "info": help,

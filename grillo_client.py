@@ -115,7 +115,8 @@ class GrilloClient:
         Returns:
             True if successful
         """
-        raise NotImplementedError("ring_location method not implemented yet.")
+        res = self._make_request("POST", f"/locations/{location_id}/ring")
+        return res.json().get("success", False), res.json()
 
     # Audit (lab time tracking) endpoints
     def get_audits(self, date_string: Optional[str] = None, user: Optional[str] = None) -> List[Dict[str, Any]]:
